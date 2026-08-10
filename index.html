@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudGuard Lite — Attack Surface Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col justify-between p-8">
+<div class="max-w-5xl mx-auto w-full">
+    <!-- Хедер із логотипом -->
+    <div class="mb-8 border-b border-slate-700 pb-4 flex items-center gap-4">
+        <img src="logo.png" alt="Logo" class="w-14 h-14 rounded-2xl shadow-lg border border-slate-700 object-cover">
+        <div>
+            <h1 class="text-3xl font-bold text-indigo-400">CloudGuard</h1>
+            <p class="text-slate-400 text-sm mt-0.5">Сервіс моніторингу поверхні атак та аналізу банерів</p>
+        </div>
+    </div>
+
+    <!-- Форма сканування -->
+    <div class="bg-slate-800 p-6 rounded-2xl shadow-lg mb-8 border border-slate-700/50">
+        <form id="scanForm" class="flex gap-4">
+            <input type="text" id="hostInput" placeholder="Введіть домен або IP (наприклад: scanme.nmap.org)"
+                   class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white placeholder-slate-500 transition" required>
+            <button type="submit" id="scanBtn" class="bg-indigo-600 hover:bg-indigo-500 font-semibold px-6 py-3 rounded-xl transition shadow-md hover:shadow-indigo-500/20">
+                Сканувати
+            </button>
+        </form>
+    </div>
+
+    <!-- Блок результатів -->
+    <div id="results" class="hidden space-y-6 mb-12">
+        <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 flex justify-between items-center shadow-md">
+            <div>
+                <h2 class="text-xl font-bold" id="targetHost"></h2>
+                <p class="text-slate-400 text-sm">IP: <span id="targetIp" class="font-mono"></span></p>
+            </div>
+            <div class="flex items-center gap-4">
+                <button id="exportJsonBtn" class="bg-slate-700 hover:bg-slate-600 text-xs px-4 py-2.5 rounded-xl border border-slate-500 transition">
+                    📥 Експорт JSON
+                </button>
+                <div id="statusBadge" class="px-4 py-1.5 rounded-full font-bold text-sm"></div>
+            </div>
+        </div>
+
+        <div class="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 shadow-md">
+            <table class="w-full text-left">
+                <thead class="bg-slate-700/60 text-slate-300 text-sm">
+                <tr>
+                    <th class="p-4">Порт</th>
+                    <th class="p-4">Сервіс</th>
+                    <th class="p-4">Рівень ризику</th>
+                    <th class="p-4">Банер / Версія</th>
+                    <th class="p-4">Опис</th>
+                </tr>
+                </thead>
+                <tbody id="portsTable" class="divide-y divide-slate-700/50"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Футер (Нижній блок) -->
+<footer class="mt-auto pt-8 border-t border-slate-800 text-center text-xs text-slate-500">
+    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
+        <p>Зроблено з 💙 розробником <span class="text-indigo-400 font-semibold">dreamyr</span></p>
+        <p class="text-slate-600">⚠️ Використовуйте тільки для власних ресурсів та авторизованого аудиту. На свій страх і ризик.</p>
+    </div>
+</footer>
+
+<script>
+    let currentScanData = null;
+
+    document.getElementById('scanForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const host = document.getElementById('hostInput').value;
+        const btn = document.getElementById('scanBtn');
+        const results = document.getElementById('results');
+
+        btn.innerText = 'Сканування...';
+        btn.disabled = true;
+
+        try {
+            const response = await fetch('http://127.0.0.1:8000/api/v1/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ host })
+            });
+
+            currentScanData = await response.json();
+
+            if (!response.ok) throw new Error(currentScanData.detail || 'Помилка');
+
+            document.getElementById('targetHost').innerText = currentScanData.target;
+            document.getElementById('targetIp').innerText = currentScanData.ip;
+
+            const badge = document.getElementById('statusBadge');
+            badge.innerText = currentScanData.overall_status;
+            badge.className = `px-4 py-1.5 rounded-full font-bold text-sm ${
+                currentScanData.overall_status === 'CRITICAL' ? 'bg-red-500/20 text-red-400 border border-red-500' :
+                currentScanData.overall_status === 'WARNING' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500' :
+                'bg-green-500/20 text-green-400 border border-green-500'
+            }`;
+
+            const tbody = document.getElementById('portsTable');
+            tbody.innerHTML = currentScanData.findings.map(item => `
+                <tr class="hover:bg-slate-700/30 transition">
+                    <td class="p-4 font-mono font-bold text-indigo-300">${item.port}</td>
+                    <td class="p-4">${item.service}</td>
+                    <td class="p-4">
+                        <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${
+                            item.risk_level === 'CRITICAL' ? 'bg-red-600' :
+                            item.risk_level === 'HIGH' ? 'bg-orange-600' :
+                            item.risk_level === 'MEDIUM' ? 'bg-yellow-600' : 'bg-blue-600'
+                        }">${item.risk_level}</span>
+                    </td>
+                    <td class="p-4 font-mono text-xs text-indigo-200 break-all">${item.banner || 'N/A'}</td>
+                    <td class="p-4 text-slate-300 text-sm">${item.description}</td>
+                </tr>
+            `).join('');
+
+            results.classList.remove('hidden');
+        } catch (err) {
+            alert('Помилка: ' + err.message);
+        } finally {
+            btn.innerText = 'Сканувати';
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('exportJsonBtn').addEventListener('click', () => {
+        if (!currentScanData) return;
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentScanData, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `scan_report_${currentScanData.target}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    });
+</script>
+</body>
+</html>
