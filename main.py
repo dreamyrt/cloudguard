@@ -1,16 +1,19 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import socket
+import asyncio
+import re
 from scanner import scan_target
 
+# Конфігурація API
 app = FastAPI(
     title="CloudGuard Lite API",
-    description="API для моніторингу поверхні атак (Attack Surface Monitoring)",
+    description="API for Attack Surface Monitoring",
     version="1.0.0"
 )
 
-# Дозволяємо фронтенду звертатися до нашого API (CORS)
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,26 +21,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Валидація IPv4 (регулярний вираз)
+ip_pattern = re.compile(r'^\d{1,3}(\.\d{1,3}){3}$')
+
 class ScanRequest(BaseModel):
     host: str
+    
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        # Перевірка на коректність формату IPv4
+        if not ip_pattern.match(value):
+            # Спроба резолвувати домен у IP-адресу (якщо є)
+            try:
+                resolved = socket.gethostbyname(value)
+                return resolved
+            except socket.gaierror:
+                raise ValueError("Некоректний формат хосту. Використовуйте коректне IPv4 або коректне доменне ім'я.")
+        return value
+
+def log_event(message: str):
+    print(f"[LOG] {message}")
 
 @app.get("/")
-def read_root():
+async def read_root():
     return {"status": "active", "service": "CloudGuard Lite API"}
 
 @app.post("/api/v1/scan")
-async def run_scan(request: ScanRequest):
+async def run_scan(request: ScanRequest, semaphore=None):
+    # Конфігурація кількості потоків (за замовчуванням 1000)
+    if not semaphore:
+        semaphore = asyncio.Semaphore(1000)
+
     try:
-        # Резолвимо IP-адресу
         target_ip = socket.gethostbyname(request.host)
     except socket.gaierror:
         raise HTTPException(
             status_code=400,
-            detail="Неможливо резолвити хост. Перевірте правильність IP/домену."
+            detail="Неможливо розпізнати хост. Перевірте правильність IP/домену."
         )
 
-    # Асинхронний виклик сканера через await
-    findings = await scan_target(target_ip)
+    async def scan_with_semaphore():
+        findings = await scan_target(target_ip)
+        return findings
+    
+    findings = await asyncio.wait_for(scan_with_semaphore(), timeout=120.0)  # Timeout 2 хв
 
     # Визначаємо загальний статус безпеки хоста
     has_critical = any(f["risk_level"] == "CRITICAL" for f in findings)

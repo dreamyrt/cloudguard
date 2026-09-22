@@ -16,6 +16,20 @@
 * **Сучасний Web UI:** Простий веб-інтерфейс для взаємодії зі сканером.
 * **Docker Ready:** Можливість швидкого запуску проєкту в ізольованому Docker-контейнері.
 
+## 📸 Демонстрація
+
+### 🖥️ Web UI
+
+<p align="center">
+  <img src="screenshots/img.png" alt="CloudGuard Web UI" width="900">
+</p>
+
+### 🔍 Результати сканування
+
+<p align="center">
+  <img src="screenshots/img_1.png" alt="CloudGuard Scan Results" width="900">
+</p>
+
 ---
 
 ## 🛠️ Технологічний стек
